@@ -13,10 +13,14 @@ func main() {
 	fmt.Println("domain,hasMX,hasSPF,spfRecord,hasDMARC,dmarcRecord")
 
 	for scanner.Scan() {
-		fmt.Println(scanner.Text())
+		CheckDomain(scanner.Text())
 	}
 
 	if err := scanner.Err(); err != nil {
 		log.Fatalf("Error: could not read from input: %v\n", err)
 	}
+}
+
+func CheckDomain(domain string) {
+	fmt.Println(domain)
 }
