@@ -26,12 +26,16 @@ func CheckDomain(domain string) Result {
 }
 
 func hasMX(domain string) bool {
-	mx, err := net.LookupMX(domain)
+	var lookupMX = net.LookupMX
+
+	mx, err := lookupMX(domain)
 	return err == nil && len(mx) > 0
 }
 
 func getSPF(domain string) (bool, string) {
-	txt, err := net.LookupTXT(domain)
+	var lookupTXT = net.LookupTXT
+
+	txt, err := lookupTXT(domain)
 	if err != nil {
 		return false, ""
 	}
