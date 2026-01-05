@@ -23,40 +23,32 @@ func main() {
 }
 
 func CheckDomain(domain string) {
-	var hasSPF, hasDMARC bool
-	var spfRecord, dmarcRecord string
-
 	hasMX := hasMXRecord(domain)
-	fmt.Printf("%s,%t\n", domain, hasMX)
+	hasSPF, spfRecord := getSPFRecord(domain)
 
-	txtRecords, _ := net.LookupTXT(domain)
-	for _, record := range txtRecords {
-		if len(record) >= 6 && record[:6] == "v=spf1" {
-			hasSPF = true
-			spfRecord = record
-		}
-	}
-
-	dmarcRecords, _ := net.LookupTXT("_dmarc." + domain)
-	for _, record := range dmarcRecords {
-		if len(record) >= 8 && record[:8] == "v=DMARC1" {
-			hasDMARC = true
-			dmarcRecord = record
-		}
-	}
-
-	fmt.Printf(
-		"%s,%t,%t,%q,%t,%q\n",
+	fmt.Printf("%s,%t,%t,%q\n",
 		domain,
 		hasMX,
 		hasSPF,
 		spfRecord,
-		hasDMARC,
-		dmarcRecord,
 	)
 }
 
 func hasMXRecord(domain string) bool {
 	mxRecords, err := net.LookupMX(domain)
 	return err == nil && len(mxRecords) > 0
+}
+
+func getSPFRecord(domain string) (bool, string) {
+	txtRecords, err := net.LookupTXT(domain)
+	if err != nil {
+		return false, ""
+	}
+
+	for _, record := range txtRecords {
+		if len(record) >= 6 && record[:6] == "v=spf1" {
+			return true, record
+		}
+	}
+	return false, ""
 }
