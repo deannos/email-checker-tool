@@ -1,65 +1,72 @@
 package main
 
 import (
-	"bufio"
+	"context"
+	"encoding/csv"
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"sync"
+	"time"
 
-	"github.com/deannos/email-checker-tool/checker"
+	"github.com/deannos/email-checker-tool/internal/checker"
+	"github.com/deannos/email-checker-tool/internal/worker"
 )
 
-const workers = 10
+var (
+	workersFlag = flag.Int("workers", 10, "number of concurrent workers")
+	timeoutFlag = flag.Duration("timeout", 5*time.Second, "DNS lookup timeout")
+	versionFlag = flag.Bool("version", false, "show version")
+)
+
+var version = "v0.1.0"
 
 func main() {
-	scanner := bufio.NewScanner(os.Stdin)
+	flag.Parse()
 
-	fmt.Println("domain,hasMX,hasSPF,spfRecord,hasDMARC,dmarcRecord")
-
-	jobs := make(chan string)
-	results := make(chan checker.Result)
-
-	var wg sync.WaitGroup
-
-	// Start workers
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for domain := range jobs {
-				results <- checker.CheckDomain(domain)
-			}
-		}()
+	if *versionFlag {
+		fmt.Println("email-checker", version)
+		return
 	}
 
-	// Feed jobs
-	go func() {
-		for scanner.Scan() {
-			jobs <- scanner.Text()
+	if flag.NArg() == 0 {
+		log.Fatal("usage: email-checker <domain_file>")
+	}
+
+	file, err := os.Open(flag.Arg(0))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	scanner := csv.NewReader(file)
+	var domains []string
+	for {
+		record, err := scanner.Read()
+		if err != nil {
+			break
 		}
-		close(jobs)
-	}()
-
-	// Close results when workers finish
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	if err := scanner.Err(); err != nil {
-		log.Fatalf("input error: %v", err)
+		domains = append(domains, record[0])
 	}
 
-	// Consume results
-	for r := range results {
-		fmt.Printf("%s,%t,%t,%q,%t,%q\n",
+	ctx, cancel := context.WithTimeout(context.Background(), *timeoutFlag)
+	defer cancel()
+
+	results := worker.Run(*workersFlag, domains, func(d string) checker.Result {
+		return checker.CheckDomain(ctx, d)
+	})
+
+	csvWriter := csv.NewWriter(os.Stdout)
+	defer csvWriter.Flush()
+	csvWriter.Write([]string{"domain", "hasMX", "hasSPF", "spfRecord", "hasDMARC", "dmarcRecord"})
+	for _, r := range results {
+		csvWriter.Write([]string{
 			r.Domain,
-			r.HasMX,
-			r.HasSPF,
+			fmt.Sprintf("%t", r.HasMX),
+			fmt.Sprintf("%t", r.HasSPF),
 			r.SPFRecord,
-			r.HasDMARC,
+			fmt.Sprintf("%t", r.HasDMARC),
 			r.DMARCRecord,
-		)
+		})
 	}
 }
