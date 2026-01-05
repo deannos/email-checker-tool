@@ -23,12 +23,22 @@ func main() {
 }
 
 func CheckDomain(domain string) {
-	hasMX := false
+	var hasMX, hasSPF bool
+	var spfRecord string
 
-	mxRecords, err := net.LookupMX(domain)
-	if err == nil && len(mxRecords) > 0 {
+	mxRecords, _ := net.LookupMX(domain)
+	if len(mxRecords) > 0 {
 		hasMX = true
 	}
 
-	fmt.Printf("%s,%t\n", domain, hasMX)
+	txtRecords, _ := net.LookupTXT(domain)
+	for _, record := range txtRecords {
+		if len(record) >= 6 && record[:6] == "v=spf1" {
+			hasSPF = true
+			spfRecord = record
+			break
+		}
+	}
+
+	fmt.Printf("%s,%t,%t,%q\n", domain, hasMX, hasSPF, spfRecord)
 }
