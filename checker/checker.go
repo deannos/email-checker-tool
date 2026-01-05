@@ -2,6 +2,10 @@ package checker
 
 import "net"
 
+// Injectable DNS functions (for testing)
+var lookupMX = net.LookupMX
+var lookupTXT = net.LookupTXT
+
 type Result struct {
 	Domain      string
 	HasMX       bool
@@ -26,15 +30,11 @@ func CheckDomain(domain string) Result {
 }
 
 func hasMX(domain string) bool {
-	var lookupMX = net.LookupMX
-
 	mx, err := lookupMX(domain)
 	return err == nil && len(mx) > 0
 }
 
 func getSPF(domain string) (bool, string) {
-	var lookupTXT = net.LookupTXT
-
 	txt, err := lookupTXT(domain)
 	if err != nil {
 		return false, ""

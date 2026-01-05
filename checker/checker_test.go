@@ -1,16 +1,21 @@
 package checker
 
-import "testing"
+import (
+	"net"
+	"testing"
+)
 
 func TestCheckDomain_WithSPFAndDMARC(t *testing.T) {
-	lookupMX = func(domain string) ([]*struct {
-		Host string
-		Pref uint16
-	}, error) {
-		return []*struct {
-			Host string
-			Pref uint16
-		}{{}}, nil
+	// Save originals
+	origMX := lookupMX
+	origTXT := lookupTXT
+	defer func() {
+		lookupMX = origMX
+		lookupTXT = origTXT
+	}()
+
+	lookupMX = func(domain string) ([]*net.MX, error) {
+		return []*net.MX{{Host: "mail.example.com", Pref: 10}}, nil
 	}
 
 	lookupTXT = func(domain string) ([]string, error) {
@@ -22,7 +27,13 @@ func TestCheckDomain_WithSPFAndDMARC(t *testing.T) {
 
 	result := CheckDomain("example.com")
 
-	if !result.HasMX || !result.HasSPF || !result.HasDMARC {
-		t.Fatal("expected MX, SPF, and DMARC to be true")
+	if !result.HasMX {
+		t.Error("expected MX record")
+	}
+	if !result.HasSPF {
+		t.Error("expected SPF record")
+	}
+	if !result.HasDMARC {
+		t.Error("expected DMARC record")
 	}
 }
