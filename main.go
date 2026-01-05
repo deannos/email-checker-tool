@@ -23,13 +23,11 @@ func main() {
 }
 
 func CheckDomain(domain string) {
-	var hasMX, hasSPF, hasDMARC bool
+	var hasSPF, hasDMARC bool
 	var spfRecord, dmarcRecord string
 
-	mxRecords, _ := net.LookupMX(domain)
-	if len(mxRecords) > 0 {
-		hasMX = true
-	}
+	hasMX := hasMXRecord(domain)
+	fmt.Printf("%s,%t\n", domain, hasMX)
 
 	txtRecords, _ := net.LookupTXT(domain)
 	for _, record := range txtRecords {
@@ -56,4 +54,9 @@ func CheckDomain(domain string) {
 		hasDMARC,
 		dmarcRecord,
 	)
+}
+
+func hasMXRecord(domain string) bool {
+	mxRecords, err := net.LookupMX(domain)
+	return err == nil && len(mxRecords) > 0
 }
