@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"net"
 	"os"
 )
 
@@ -22,5 +23,12 @@ func main() {
 }
 
 func CheckDomain(domain string) {
-	fmt.Println(domain)
+	hasMX := false
+
+	mxRecords, err := net.LookupMX(domain)
+	if err == nil && len(mxRecords) > 0 {
+		hasMX = true
+	}
+
+	fmt.Printf("%s,%t\n", domain, hasMX)
 }
