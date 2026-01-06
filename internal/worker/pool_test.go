@@ -2,16 +2,14 @@ package worker
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/deannos/email-checker-tool/internal/checker"
-	"github.com/deannos/email-checker-tool/internal/output"
 )
 
-// MockWriter is a dummy writer that stores results in memory for testing.
+// MockWriter implements worker.Writer for testing.
 type MockWriter struct {
 	mu      sync.Mutex
 	Results []checker.Result
@@ -24,23 +22,17 @@ func (m *MockWriter) Write(r checker.Result) error {
 	return nil
 }
 
-// MockWriter implements Flush() if needed, but we can just skip it for basic tests
-// If the pool requires Flush, we add an empty method.
 func (m *MockWriter) Flush() error {
 	return nil
 }
 
 func TestPool_ProcessJobs(t *testing.T) {
-	// Setup a temporary CSV file (though we use MockWriter mostly, we might need the struct)
 	mockWriter := &MockWriter{}
-
-	// Create Pool: 2 Workers, Rate limit 100/sec (fast for test)
+	// Rate limit high to finish fast
 	pool := NewPool(2, 10, mockWriter, 100)
 
-	// Define jobs
 	domains := []string{"example.com", "test.com", "google.com"}
 
-	// Feed jobs in background
 	go func() {
 		for _, d := range domains {
 			pool.AddJob(d)
@@ -48,13 +40,11 @@ func TestPool_ProcessJobs(t *testing.T) {
 		pool.Close()
 	}()
 
-	// Start pool with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	pool.Start(ctx)
 
-	// Verify results
 	if len(mockWriter.Results) != len(domains) {
 		t.Errorf("Expected %d results, got %d", len(domains), len(mockWriter.Results))
 	}
@@ -63,30 +53,36 @@ func TestPool_ProcessJobs(t *testing.T) {
 func TestPool_RateLimiting(t *testing.T) {
 	mockWriter := &MockWriter{}
 
-	// Create Pool: 1 Worker, Rate limit 1 request per 200ms (5 per sec)
-	// This ensures the test is slow enough to measure
-	pool := NewPool(1, 10, mockWriter, 5)
+	// Setup: 1 Worker, 2 Requests Per Second limit.
+	pool := NewPool(1, 10, mockWriter, 2)
 
 	startTime := time.Now()
 
 	go func() {
-		// Add 2 jobs. With 5 RPS, these should take at least 200ms (2 * 1/5s)
-		pool.AddJob("example.com")
-		pool.AddJob("test.com")
+		// Add 10 jobs.
+		// At 2 RPS, and burst of 1, we expect:
+		// Job 1 (Burst): ~0ms
+		// Job 2: Wait 500ms
+		// Job 3: Wait 1000ms
+		// ...
+		// Job 10: Wait 4500ms
+		// Total ~ 4.5 seconds minimum.
+		for i := 0; i < 10; i++ {
+			pool.AddJob("example.com")
+		}
 		pool.Close()
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	pool.Start(ctx)
 
 	duration := time.Since(startTime)
 
-	// We expect at least ~200ms (2 jobs * 200ms rate limiter interval)
-	// If it finishes in 1ms, rate limiting is broken.
-	if duration < 300*time.Millisecond {
-		t.Errorf("Rate limiting failed? Expected > 300ms, took %v", duration)
+	// We expect at least 4 seconds given the burst=1 constraint.
+	if duration < 4*time.Second {
+		t.Errorf("Rate limiting failed? Expected > 4s, took %v", duration)
 	}
 }
 
@@ -94,10 +90,8 @@ func TestPool_ContextCancellation(t *testing.T) {
 	mockWriter := &MockWriter{}
 	pool := NewPool(2, 10, mockWriter, 100)
 
-	// Create a context that cancels after 50ms
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Feed many jobs that take time (simulated by checking real domains)
 	go func() {
 		for i := 0; i < 100; i++ {
 			pool.AddJob("example.com")
@@ -105,7 +99,6 @@ func TestPool_ContextCancellation(t *testing.T) {
 		pool.Close()
 	}()
 
-	// Cancel context shortly after starting
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -113,9 +106,6 @@ func TestPool_ContextCancellation(t *testing.T) {
 
 	pool.Start(ctx)
 
-	// The pool should have stopped early.
-	// We can't assert an exact number of results because of race conditions,
-	// but we verify it didn't process all 100.
 	if len(mockWriter.Results) > 90 {
 		t.Errorf("Context cancellation failed? Processed %d jobs, expected fewer", len(mockWriter.Results))
 	}

@@ -58,7 +58,7 @@ func main() {
 	defer csvWriter.Close()
 
 	// 3. Initialize Pool
-	pool := worker.NewPool(*workersFlag, 1000, *csvWriter, *rpsFlag)
+	pool := worker.NewPool(*workersFlag, 1000, csvWriter, *rpsFlag)
 
 	// 4. Read Input and Feed Jobs (Non-blocking)
 	go func() {

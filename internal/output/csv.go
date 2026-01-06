@@ -8,14 +8,14 @@ import (
 	"github.com/deannos/email-checker-tool/internal/checker"
 )
 
-// CSVWriter handles writing results to a CSV file.
+// CSVWriter implements the worker.Writer interface.
 type CSVWriter struct {
 	file   *os.File
 	writer *csv.Writer
 	mu     sync.Mutex
 }
 
-// NewCSVWriter creates a new file and initializes the CSV header.
+// NewCSVWriter creates a new CSV file and writes the header.
 func NewCSVWriter(filePath string) (*CSVWriter, error) {
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -23,7 +23,8 @@ func NewCSVWriter(filePath string) (*CSVWriter, error) {
 	}
 
 	writer := csv.NewWriter(file)
-	// Write Header
+
+	// Write CSV Header
 	header := []string{"domain", "hasMX", "hasSPF", "spfRecord", "hasDMARC", "dmarcRecord", "error"}
 	if err := writer.Write(header); err != nil {
 		file.Close()
@@ -37,7 +38,8 @@ func NewCSVWriter(filePath string) (*CSVWriter, error) {
 	}, nil
 }
 
-// Write appends a single result to the CSV.
+// Write appends a record to the CSV.
+// NOTE: Uses Pointer Receiver (*CSVWriter) to satisfy the interface.
 func (w *CSVWriter) Write(result checker.Result) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -54,7 +56,8 @@ func (w *CSVWriter) Write(result checker.Result) error {
 	return w.writer.Write(record)
 }
 
-// Flush ensures all data is written to disk.
+// Flush forces any buffered data to be written to the file.
+// NOTE: Uses Pointer Receiver (*CSVWriter) to satisfy the interface.
 func (w *CSVWriter) Flush() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -67,7 +70,7 @@ func (w *CSVWriter) Close() error {
 	return w.file.Close()
 }
 
-// Helper to convert bool to string for CSV
+// Helper function
 func boolToStr(b bool) string {
 	if b {
 		return "true"
