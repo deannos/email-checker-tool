@@ -20,9 +20,10 @@ vendor/
 go.work
 
 # Build output folders
-/bin/
-/dist/
-/tmp/
+# Removed leading slash to catch 'bin/' anywhere in the project
+bin/
+dist/
+tmp/
 
 # IDE specific files
 .idea/
@@ -39,3 +40,17 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# ------------------------------------------------
+# Project Specifics
+# ------------------------------------------------
+
+# Runtime output files (Don't commit results of the tool)
+output.csv
+results.csv
+
+# Input test files (Optional: ignore temporary test inputs)
+test_domains.csv
+
+# Allow specific fixture files if you need them for integration tests
+!fixtures/*.csv
