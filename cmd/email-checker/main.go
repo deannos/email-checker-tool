@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/deannos/email-checker-tool/internal/output"
+	"github.com/deannos/email-checker-tool/internal/version"
 	"github.com/deannos/email-checker-tool/internal/worker"
 )
 
@@ -23,13 +24,11 @@ var (
 	outputFlag  = flag.String("output", "output.csv", "output CSV file path")
 )
 
-var version = "v0.1.0"
-
 func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		log.Println("email-checker", version)
+		log.Println("email-checker", version.Version)
 		return
 	}
 
