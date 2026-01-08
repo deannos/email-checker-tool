@@ -266,16 +266,16 @@ The project follows the [Standard Go Project Layout](https://github.com/golang-s
 ### Core Components
 
 #### `cmd/email-checker`
-The application entry point. Handles CLI argument parsing, initializes workers, and orchestrates the validation pipeline.
+- The application entry point. Handles CLI argument parsing, initializes workers, and orchestrates the validation pipeline.
 
 #### `internal/checker`
-DNS resolution logic for MX, SPF, and DMARC records. Implements clean separation between network operations and business logic.
+- DNS resolution logic for MX, SPF, and DMARC records. Implements clean separation between network operations and business logic.
 
 #### `internal/worker`
-Worker pool implementation with built-in rate limiting. Manages concurrent domain processing while respecting rate limits globally.
+- Worker pool implementation with built-in rate limiting. Manages concurrent domain processing while respecting rate limits globally.
 
 #### `internal/output`
-Handles CSV streaming and result persistence. Implements efficient buffering for large-scale operations.
+- Handles CSV streaming and result persistence. Implements efficient buffering for large-scale operations.
 
 ### Design Principles
 
