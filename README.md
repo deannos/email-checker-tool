@@ -245,22 +245,33 @@ The project follows the [Standard Go Project Layout](https://github.com/golang-s
 ### Directory Structure
 
 ```
-.
-├── cmd/
-│   └── email-checker/
-│       └── main.go                 # Application entry point
-├── internal/
-│   ├── checker/
-│   │   └── checker.go              # DNS lookup logic (MX, SPF, DMARC)
-│   ├── worker/
-│   │   └── pool.go                 # Worker pool with rate limiting
-│   └── output/
-│       └── csv.go                  # CSV writing and result handling
+├── CHANGELOG.md
+├── cmd
+│   └── email-checker
+│       └── main.go                 # Application entry point
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
 ├── go.mod
 ├── go.sum
-├── README.md
+├── internal
+│   ├── checker
+│   │   ├── checker_test.go
+│   │   └── checker.go              # DNS lookup logic (MX, SPF, DMARC)
+│   ├── output
+│   │   ├── csv_test.go 
+│   │   └── csv.go                  # CSV writing and result handling
+│   ├── version
+│   │   └── version.go
+│   └── worker
+│       ├── pool_test.go
+│       └── pool.go                 # Worker pool with rate limiting
 ├── LICENSE
-└── .gitignore
+├── output.csv
+├── README.md
+├── SECURITY.md
+└── test_domains.csv
+
+
 ```
 
 ### Core Components
