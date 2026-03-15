@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run tests
+        run: go test -v -race -count=1 ./...
+
+      - name: Build
+        run: go build ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release binaries
+        run: |
+          mkdir -p dist
+          GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/email-checker-linux-amd64   ./cmd/email-checker
+          GOOS=linux   GOARCH=arm64 go build -ldflags="-s -w" -o dist/email-checker-linux-arm64   ./cmd/email-checker
+          GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w" -o dist/email-checker-darwin-amd64  ./cmd/email-checker
+          GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w" -o dist/email-checker-darwin-arm64  ./cmd/email-checker
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/email-checker-windows-amd64.exe ./cmd/email-checker
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
