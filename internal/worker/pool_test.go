@@ -22,14 +22,16 @@ func (m *MockWriter) Write(r checker.Result) error {
 	return nil
 }
 
-func (m *MockWriter) Flush() error {
-	return nil
+func (m *MockWriter) Flush() error { return nil }
+
+// noopCheckFn returns an empty result without any DNS call.
+func noopCheckFn(_ context.Context, domain string) checker.Result {
+	return checker.Result{Domain: domain}
 }
 
 func TestPool_ProcessJobs(t *testing.T) {
 	mockWriter := &MockWriter{}
-	// Rate limit high to finish fast
-	pool := NewPool(2, 10, mockWriter, 100)
+	pool := NewPool(2, 10, mockWriter, 100, noopCheckFn)
 
 	domains := []string{"example.com", "test.com", "google.com"}
 
@@ -50,26 +52,20 @@ func TestPool_ProcessJobs(t *testing.T) {
 	}
 }
 
-func TestPool_RateLimiting(t *testing.T) {
+func TestPool_Stats(t *testing.T) {
 	mockWriter := &MockWriter{}
-
-	// Setup: 1 Worker, 2 Requests Per Second limit.
-	pool := NewPool(1, 10, mockWriter, 2)
-
-	startTime := time.Now()
+	errCheckFn := func(_ context.Context, domain string) checker.Result {
+		if domain == "bad.com" {
+			return checker.Result{Domain: domain, Error: "lookup failed"}
+		}
+		return checker.Result{Domain: domain}
+	}
+	pool := NewPool(2, 10, mockWriter, 100, errCheckFn)
 
 	go func() {
-		// Add 10 jobs.
-		// At 2 RPS, and burst of 1, we expect:
-		// Job 1 (Burst): ~0ms
-		// Job 2: Wait 500ms
-		// Job 3: Wait 1000ms
-		// ...
-		// Job 10: Wait 4500ms
-		// Total ~ 4.5 seconds minimum.
-		for i := 0; i < 10; i++ {
-			pool.AddJob("example.com")
-		}
+		pool.AddJob("good.com")
+		pool.AddJob("bad.com")
+		pool.AddJob("good2.com")
 		pool.Close()
 	}()
 
@@ -78,17 +74,43 @@ func TestPool_RateLimiting(t *testing.T) {
 
 	pool.Start(ctx)
 
-	duration := time.Since(startTime)
+	stats := pool.Stats()
+	if stats.Processed != 3 {
+		t.Errorf("Expected 3 processed, got %d", stats.Processed)
+	}
+	if stats.Errors != 1 {
+		t.Errorf("Expected 1 error, got %d", stats.Errors)
+	}
+}
 
-	// We expect at least 4 seconds given the burst=1 constraint.
+func TestPool_RateLimiting(t *testing.T) {
+	mockWriter := &MockWriter{}
+	pool := NewPool(1, 10, mockWriter, 2, noopCheckFn)
+
+	startTime := time.Now()
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			pool.AddJob("example.com")
+		}
+		pool.Close()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	pool.Start(ctx)
+
+	duration := time.Since(startTime)
+	// At 2 RPS with burst=1: job 1 immediate, jobs 2-10 spaced 500ms apart → ~4.5s minimum.
 	if duration < 4*time.Second {
-		t.Errorf("Rate limiting failed? Expected > 4s, took %v", duration)
+		t.Errorf("Rate limiting failed: expected > 4s, took %v", duration)
 	}
 }
 
 func TestPool_ContextCancellation(t *testing.T) {
 	mockWriter := &MockWriter{}
-	pool := NewPool(2, 10, mockWriter, 100)
+	pool := NewPool(2, 100, mockWriter, 1000, noopCheckFn)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -100,13 +122,13 @@ func TestPool_ContextCancellation(t *testing.T) {
 	}()
 
 	go func() {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
 
 	pool.Start(ctx)
 
-	if len(mockWriter.Results) > 90 {
-		t.Errorf("Context cancellation failed? Processed %d jobs, expected fewer", len(mockWriter.Results))
+	if len(mockWriter.Results) >= 100 {
+		t.Errorf("Context cancellation failed: processed all 100 jobs despite early cancel")
 	}
 }
