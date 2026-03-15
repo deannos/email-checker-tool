@@ -5,10 +5,11 @@
 [![Go Version](https://img.shields.io/badge/go-1.21%2B-blue.svg)](https://golang.org/doc/devel/release)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/deannos/email-checker-tool.svg)](https://github.com/deannos/email-checker-tool/releases)
+[![CI](https://github.com/deannos/email-checker-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/deannos/email-checker-tool/actions/workflows/ci.yml)
 
-A high-performance, production-grade CLI tool for comprehensive email domain validation. Verify DNS configurations (MX, SPF, DMARC) at scale with concurrent processing and intelligent rate limiting.
+A high-performance, production-grade CLI tool for bulk email domain validation. Verify MX, SPF, and DMARC configurations at scale with concurrent processing, intelligent rate limiting, and flexible output formats.
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Architecture](#architecture) • [Contributing](#contributing)
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Configuration](#configuration) • [Architecture](#architecture) • [Contributing](#contributing)
 
 </div>
 
@@ -16,44 +17,37 @@ A high-performance, production-grade CLI tool for comprehensive email domain val
 
 ## Overview
 
-Email Checker Tool is an open-source command-line utility designed to validate email domain configurations at scale. Whether you're managing mailing lists, validating domains in bulk, or implementing email verification workflows, this tool provides a robust, efficient solution for DNS-based email infrastructure audits.
+Email Checker Tool is an open-source CLI utility designed to validate email domain configurations at scale. Whether you're auditing mailing lists, checking DNS health, or enforcing email authentication policies, it provides a robust, efficient pipeline built on Go's standard library.
 
-Built with Go, it leverages concurrent processing patterns to handle thousands of domains rapidly while respecting DNS server limitations through intelligent rate limiting. The tool is designed for both operational simplicity and production reliability.
+**v2.0.0 highlights:** custom DNS resolver, automatic retry with backoff, in-memory result caching, JSON output (JSONL), per-domain timing, error categorization, flexible CSV column selection, live progress stats, and a GitHub Actions CI/CD pipeline.
 
 ---
 
 ## Features
 
 ### High-Performance Processing
-- **Concurrent Workers:** Configurable worker pools for parallel domain processing
-- **Optimized DNS Lookups:** Efficient resolution of MX, SPF, and DMARC records
-- **Minimal Memory Footprint:** Streaming CSV processing prevents memory bloat on large datasets
+- **Concurrent Workers:** Configurable goroutine pool for parallel domain processing
+- **Streaming I/O:** Processes CSV input of any size with a minimal memory footprint
+- **In-Memory Caching:** Optional TTL-based cache deduplicates repeated domain lookups
 
 ### Intelligent Rate Limiting
-- **Configurable RPS (Requests Per Second):** Prevent IP blocks and DNS server overload
-- **Smart Throttling:** Respects rate limits globally across all workers
-- **Server-Friendly:** Designed to operate responsibly within DNS infrastructure constraints
+- **Configurable RPS:** Token bucket algorithm enforces a global request-per-second limit across all workers
+- **Server-Friendly:** Prevents IP blocks and DNS server overload out of the box
 
-### Robust Timeout Management
-- **Context-Aware Timeouts:** Prevents hanging on unresponsive DNS servers
-- **Configurable Durations:** Global operation timeout with per-request limits
-- **Graceful Degradation:** Handles timeouts without crashing the application
+### Robust DNS Handling
+- **Fully Context-Aware:** MX, SPF, and DMARC lookups all respect timeout and cancellation
+- **Automatic Retry:** Exponential backoff retries on transient errors (configurable attempts)
+- **Custom Resolver:** Point the tool at any DNS server (e.g. `8.8.8.8:53`, `1.1.1.1:53`)
+- **Error Categorization:** Distinguishes `timeout`, `nxdomain`, `network`, and `unknown` failures
 
-### Comprehensive Email Validation
-- **MX Record Verification:** Confirms domain has valid mail exchange servers
-- **SPF Record Detection:** Identifies Sender Policy Framework configurations
-- **DMARC Policy Analysis:** Validates Domain-based Message Authentication, Reporting, and Conformance policies
-- **Detailed Error Reporting:** Captures validation issues for troubleshooting
-
-### CSV-Based Workflow
-- **Streaming Input Processing:** Handles CSV files of any size efficiently
-- **Structured Output:** Machine-readable results for downstream processing
-- **Flexible Column Mapping:** Automatically detects domain column in input files
+### Flexible Output
+- **CSV (default):** Machine-readable, includes all record values plus timing and error type
+- **JSON (JSONL):** One JSON object per line — pipe directly into `jq` or any log processor
+- **Live Progress:** Logs `Processed / Errors / Rate req/s` every second during a run
 
 ### Safe Shutdown
-- **Graceful Signal Handling:** SIGINT (Ctrl+C) captures and safely flushes results
-- **Progress Preservation:** Saves processed results before terminating
-- **Data Integrity:** Ensures no results are lost during shutdown
+- **Graceful Signal Handling:** `SIGINT`/`SIGTERM` flushes buffered results before exit
+- **Data Integrity:** No results are lost on interrupted runs
 
 ---
 
@@ -61,58 +55,51 @@ Built with Go, it leverages concurrent processing patterns to handle thousands o
 
 ### Prerequisites
 
-- **Go:** Version 1.21 or higher
-- **Environment:** Linux, macOS, or Windows
+- Go 1.21 or higher
+- Linux, macOS, or Windows
 
 ### From Source
 
 ```bash
 git clone https://github.com/deannos/email-checker-tool.git
 cd email-checker-tool
-go install ./cmd/email-checker@latest
+go build -o bin/email-checker ./cmd/email-checker
 ```
 
-Or directly install the latest release:
+Or install directly:
 
 ```bash
-go install github.com/deannos/email-checker-tool@latest
+go install github.com/deannos/email-checker-tool/cmd/email-checker@latest
 ```
 
 ### From Binary Release
 
 Download precompiled binaries for your platform from the [Releases](https://github.com/deannos/email-checker-tool/releases) page:
 
-- Linux (x86_64, ARM64)
+- Linux (amd64, arm64)
 - macOS (Intel, Apple Silicon)
-- Windows (x86_64)
-
-Extract and add to your `$PATH`:
+- Windows (amd64)
 
 ```bash
 # Linux/macOS
-tar -xzf email-checker-tool_<version>_<os>_<arch>.tar.gz
-sudo mv email-checker-tool /usr/local/bin/
-
-# Windows
-# Extract the .zip file and add the directory to your PATH
+chmod +x email-checker-linux-amd64
+sudo mv email-checker-linux-amd64 /usr/local/bin/email-checker
 ```
 
 ### Verify Installation
 
 ```bash
 email-checker --version
+# email-checker 2.0.0
 ```
 
 ---
 
 ## Quick Start
 
-### Basic Usage
-
-Create a CSV file with domains to check:
+Create a CSV file with domains:
 
 ```csv
-domain
 google.com
 github.com
 example.com
@@ -124,16 +111,64 @@ Run the checker:
 email-checker domains.csv
 ```
 
-Results are saved to `output.csv` by default.
+Results are saved to `output.csv` by default. Progress is printed to stderr every second.
 
-### Advanced Usage
+---
+
+## Usage
+
+### Basic
 
 ```bash
-email-checker input.csv \
-  --workers 20 \
-  --rps 50 \
-  --timeout 10s \
-  --output results.csv
+email-checker domains.csv
+```
+
+### Custom output path and format
+
+```bash
+# CSV output
+email-checker --output results.csv domains.csv
+
+# JSON (JSONL) output
+email-checker --format json --output results.jsonl domains.csv
+```
+
+### Tune performance
+
+```bash
+email-checker --workers 20 --rps 50 --timeout 60s domains.csv
+```
+
+### Use a custom DNS resolver with retries
+
+```bash
+email-checker --dns 8.8.8.8:53 --retries 3 domains.csv
+```
+
+### Enable result caching (useful for lists with duplicates)
+
+```bash
+email-checker --cache-ttl 10m domains.csv
+```
+
+### Handle a CSV where domain is not the first column
+
+```bash
+# Domain is in column index 1 (second column), with a header row
+email-checker --col 1 --skip-header contacts.csv
+```
+
+### Quiet mode (no progress output)
+
+```bash
+email-checker --no-progress domains.csv
+```
+
+### Pipe JSON results into jq
+
+```bash
+email-checker --format json --output /dev/stdout --no-progress domains.csv \
+  | jq 'select(.hasMX == false)'
 ```
 
 ---
@@ -144,23 +179,29 @@ email-checker input.csv \
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--workers` | `int` | `10` | Number of concurrent workers for parallel processing |
-| `--rps` | `int` | `20` | Maximum DNS requests per second (rate limit) |
-| `--timeout` | `string` | `5s` | Global timeout for the entire operation (e.g., `30s`, `5m`) |
-| `--output` | `string` | `output.csv` | Path to the output CSV file |
-| `--version` | `bool` | `false` | Print version information and exit |
+| `--workers` | `int` | `10` | Number of concurrent worker goroutines |
+| `--rps` | `int` | `20` | Max DNS requests per second (global rate limit) |
+| `--timeout` | `duration` | `30s` | Global operation timeout (e.g. `30s`, `5m`) |
+| `--output` | `string` | `output.csv` | Output file path |
+| `--format` | `string` | `csv` | Output format: `csv` or `json` |
+| `--dns` | `string` | _(system)_ | Custom DNS resolver address (e.g. `8.8.8.8:53`) |
+| `--retries` | `int` | `2` | Retry attempts on transient DNS errors |
+| `--cache-ttl` | `duration` | `5m` | Result cache TTL; `0` disables caching |
+| `--col` | `int` | `0` | Zero-based column index of the domain in the input CSV |
+| `--skip-header` | `bool` | `false` | Skip the first row of the input CSV |
+| `--no-progress` | `bool` | `false` | Suppress periodic progress stats |
+| `--version` | `bool` | `false` | Print version and exit |
 
-### Configuration Guidelines
+### Tuning Guidelines
 
-**Tuning for Performance:**
-- Increase `--workers` (20-50) for larger domain lists
-- Adjust `--rps` based on your network and target DNS servers (typically 10-100)
-- Increase `--timeout` for operations processing 10,000+ domains (consider `30s` or `60s`)
+**For throughput:**
+- Increase `--workers` (20–50) and `--rps` (50–100) for large lists
+- Increase `--timeout` (`60s` or more) when processing 10,000+ domains
+- Enable `--cache-ttl` when the input contains many duplicate domains
 
-**Tuning for Safety:**
-- Reduce `--workers` to 5-10 for shared infrastructure
-- Lower `--rps` to 10-15 to be conservative with external DNS servers
-- Monitor logs for timeouts and adjust accordingly
+**For safety (shared DNS infrastructure):**
+- Keep `--workers` at 5–10 and `--rps` at 10–15
+- Use `--retries 3` with `--dns 8.8.8.8:53` if the system resolver is unreliable
 
 ---
 
@@ -168,281 +209,186 @@ email-checker input.csv \
 
 ### Input Format
 
-The input CSV file must contain a `domain` column. Additional columns are preserved in the output.
-
-**Example Input (domains.csv):**
+The input must be a CSV file. By default, the domain is read from the first column (index `0`). Use `--col` to select a different column and `--skip-header` to ignore a header row.
 
 ```csv
-domain,company,contact
-google.com,Google,support@google.com
-github.com,GitHub,support@github.com
-example.com,Example Corp,admin@example.com
+google.com
+github.com
+example.com
 ```
 
-### Output Format
-
-The tool generates a CSV file with validation results for each domain.
-
-**Example Output (output.csv):**
+Or with headers and multiple columns:
 
 ```csv
-domain,hasMX,hasSPF,spfRecord,hasDMARC,dmarcRecord,error
-google.com,true,true,"v=spf1 include:google.com ~all",true,"v=DMARC1; p=none",
-github.com,true,true,"v=spf1 include:github.com ~all",true,"v=DMARC1; p=quarantine",
-example.com,true,false,"",false,"","DMARC lookup failed: timeout"
+company,domain,contact
+Google,google.com,support@google.com
+GitHub,github.com,support@github.com
 ```
 
-### Output Field Reference
+```bash
+email-checker --col 1 --skip-header contacts.csv
+```
+
+### CSV Output
+
+```csv
+domain,hasMX,hasSPF,spfRecord,hasDMARC,dmarcRecord,error,errorType,durationMs
+google.com,true,true,"v=spf1 include:_spf.google.com ~all",true,"v=DMARC1; p=none; ...",,,42
+example.com,true,false,,false,,,,31
+bad-domain.xyz,false,false,,false,,lookup failed,nxdomain,5
+```
+
+### CSV Output Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `domain` | string | The domain being validated |
-| `hasMX` | boolean | Whether the domain has MX records |
-| `hasSPF` | boolean | Whether the domain has SPF record |
-| `spfRecord` | string | Full SPF record value if present |
-| `hasDMARC` | boolean | Whether the domain has DMARC policy |
-| `dmarcRecord` | string | Full DMARC record value if present |
-| `error` | string | Any errors encountered during validation |
+| `domain` | string | Domain that was checked |
+| `hasMX` | bool | Domain has at least one MX record |
+| `hasSPF` | bool | Domain has an SPF TXT record |
+| `spfRecord` | string | Full SPF record value |
+| `hasDMARC` | bool | Domain has a DMARC policy |
+| `dmarcRecord` | string | Full DMARC record value |
+| `error` | string | Error message if the lookup failed |
+| `errorType` | string | Categorized error: `timeout`, `nxdomain`, `network`, `unknown` |
+| `durationMs` | int | Total lookup time in milliseconds |
+
+### JSON Output (JSONL)
+
+Each line is a self-contained JSON object:
+
+```json
+{"domain":"google.com","hasMX":true,"hasSPF":true,"spfRecord":"v=spf1 include:_spf.google.com ~all","hasDMARC":true,"dmarcRecord":"v=DMARC1; p=none;","durationMs":42}
+{"domain":"bad-domain.xyz","hasMX":false,"hasSPF":false,"hasDMARC":false,"error":"lookup failed","errorType":"nxdomain","durationMs":5}
+```
 
 ---
 
 ## Use Cases
 
 ### Email List Validation
-Verify thousands of domains before importing into email marketing platforms:
 
 ```bash
-email-checker email_list.csv --workers 30 --rps 50 --timeout 30s
+email-checker --workers 30 --rps 50 --timeout 60s email_list.csv
 ```
 
-### Security Audits
-Identify domains missing SPF or DMARC configurations for compliance:
+### Security / Compliance Audit
+
+Find domains missing SPF or DMARC:
 
 ```bash
-email-checker company_domains.csv --output security_audit.csv
+email-checker --format json --output /dev/stdout --no-progress domains.csv \
+  | jq 'select(.hasSPF == false or .hasDMARC == false) | .domain'
 ```
 
-### DNS Infrastructure Testing
-Test DNS resolver performance and reliability across a domain list:
+### DNS Infrastructure Testing with Custom Resolver
 
 ```bash
-email-checker test_domains.csv --workers 50 --timeout 60s
+email-checker --dns 1.1.1.1:53 --retries 3 domains.csv
 ```
 
-### Bulk Email Sender Validation
-Pre-validate sender domains before implementing email authentication:
+### Bulk Sender Validation
 
 ```bash
-email-checker senders.csv --rps 30 --output validated_senders.csv
+email-checker --rps 30 --output validated_senders.csv senders.csv
 ```
 
 ---
 
 ## Architecture
 
-The project follows the [Standard Go Project Layout](https://github.com/golang-standards/project-layout) for maintainability and clarity.
+The project follows the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
 
 ### Directory Structure
 
 ```
-├── CHANGELOG.md
-├── cmd
-│   └── email-checker
-│       └── main.go                 # Application entry point
-├── CODE_OF_CONDUCT.md
-├── CONTRIBUTING.md
+email-checker-tool/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                  # CI: test, lint, cross-platform release builds
+├── cmd/
+│   └── email-checker/
+│       └── main.go                 # CLI entry point
+├── internal/
+│   ├── checker/
+│   │   ├── checker.go              # Checker struct: DNS lookups, retry, error categorization
+│   │   ├── checker_test.go
+│   │   └── cache.go                # TTL-based in-memory result cache
+│   ├── output/
+│   │   ├── csv.go                  # Thread-safe CSV writer
+│   │   ├── csv_test.go
+│   │   └── json.go                 # JSONL writer
+│   ├── version/
+│   │   └── version.go
+│   └── worker/
+│       ├── pool.go                 # Worker pool with rate limiting and atomic stats
+│       └── pool_test.go
 ├── go.mod
-├── go.sum
-├── internal
-│   ├── checker
-│   │   ├── checker_test.go
-│   │   └── checker.go              # DNS lookup logic (MX, SPF, DMARC)
-│   ├── output
-│   │   ├── csv_test.go 
-│   │   └── csv.go                  # CSV writing and result handling
-│   ├── version
-│   │   └── version.go
-│   └── worker
-│       ├── pool_test.go
-│       └── pool.go                 # Worker pool with rate limiting
-├── LICENSE
-├── output.csv
-├── README.md
-├── SECURITY.md
-└── test_domains.csv
-
-
+└── go.sum
 ```
 
 ### Core Components
 
-#### `cmd/email-checker`
-- The application entry point. Handles CLI argument parsing, initializes workers, and orchestrates the validation pipeline.
+**`internal/checker`** — DNS resolution layer. The `Checker` struct encapsulates a configurable `net.Resolver`, retry logic with exponential backoff, error categorization, and an optional TTL cache. All lookups (MX, SPF, DMARC) are fully context-aware.
 
-#### `internal/checker`
-- DNS resolution logic for MX, SPF, and DMARC records. Implements clean separation between network operations and business logic.
+**`internal/worker`** — Concurrent processing pipeline. `Pool` accepts a `CheckFn` function, a `Writer`, and a `rate.Limiter`. Worker goroutines pull domains from a buffered channel, respect the global rate limit, and record processed/error counts with atomic operations.
 
-#### `internal/worker`
-- Worker pool implementation with built-in rate limiting. Manages concurrent domain processing while respecting rate limits globally.
+**`internal/output`** — Result serialization. `CSVWriter` uses a mutex-protected `encoding/csv` writer; `JSONWriter` uses `json.Encoder` for lock-protected JSONL output. Both implement the `worker.Writer` interface.
 
-#### `internal/output`
-- Handles CSV streaming and result persistence. Implements efficient buffering for large-scale operations.
+**`cmd/email-checker`** — Wires everything together: parses flags, constructs the `Checker` and writer, feeds a goroutine with CSV input, starts the pool, and logs live progress stats.
 
 ### Design Principles
 
-- **Concurrency:** Goroutines for parallel processing with controlled pooling
-- **Rate Limiting:** Token bucket algorithm for predictable rate control
-- **Error Handling:** Comprehensive error capture without halting execution
-- **Resource Management:** Graceful shutdown and context cancellation
+- **Concurrency:** Goroutines with a bounded channel-based job queue
+- **Rate Limiting:** Token bucket (`golang.org/x/time/rate`) enforced globally
+- **Resilience:** Retry with exponential backoff; errors captured per-domain without halting
+- **Extensibility:** `worker.Writer` interface makes it easy to add new output formats
 
 ---
 
 ## Development
 
-### Prerequisites
-
-- Go 1.21 or higher
-- Git
-- Make (optional, for build automation)
-
-### Building from Source
+### Building
 
 ```bash
-git clone https://github.com/deannos/email-checker-tool.git
-cd email-checker-tool
 go build -o bin/email-checker ./cmd/email-checker
 ```
 
-Run the compiled binary:
+### Testing
 
 ```bash
-./bin/email-checker domains.csv
-```
-
-### Running Tests
-
-Execute the full test suite:
-
-```bash
+# All packages
 go test ./...
-```
 
-Run tests with verbose output:
+# Verbose with race detector
+go test -v -race ./...
 
-```bash
-go test -v ./...
-```
-
-Run tests with coverage:
-
-```bash
-go test -cover ./...
-```
-
-Generate coverage report:
-
-```bash
+# Coverage report
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
-### Code Quality
-
-Ensure code follows Go conventions:
+### Linting
 
 ```bash
-# Format code
-go fmt ./...
-
-# Lint code (requires golangci-lint)
-golangci-lint run ./...
-
-# Run vet
 go vet ./...
+golangci-lint run ./...
 ```
 
----
+### CI/CD
 
-## Contributing
-
-We welcome contributions from the community! Whether you're reporting bugs, suggesting features, or submitting code improvements, your help makes this project better.
-
-### Getting Started
-
-1. **Fork the Repository**
-   ```bash
-   # Click "Fork" on the GitHub repository page
-   ```
-
-2. **Clone Your Fork**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/email-checker-tool.git
-   cd email-checker-tool
-   ```
-
-3. **Create a Feature Branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-4. **Make Your Changes**
-    - Write clear, idiomatic Go code
-    - Add or update tests for new functionality
-    - Update documentation as needed
-
-5. **Commit Your Changes**
-   ```bash
-   git commit -m "feat: add your feature description"
-   ```
-
-   Use conventional commit messages:
-    - `feat:` for new features
-    - `fix:` for bug fixes
-    - `docs:` for documentation
-    - `test:` for test additions
-    - `refactor:` for code refactoring
-
-6. **Push to Your Fork**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-7. **Open a Pull Request**
-    - Provide a clear description of your changes
-    - Reference any related issues
-    - Ensure all tests pass
-
-### Development Workflow
-
-- Write tests for new code
-- Ensure existing tests pass: `go test ./...`
-- Follow Go best practices and idioms
-- Keep commits atomic and focused
-- Update README.md if adding user-facing features
-
-### Reporting Issues
-
-Found a bug? Please [open an issue](https://github.com/deannos/email-checker-tool/issues) with:
-- Clear description of the problem
-- Steps to reproduce
-- Expected vs. actual behavior
-- Go version and OS information
+Every push and pull request to `main` runs the full test suite and linter via GitHub Actions (`.github/workflows/ci.yml`). Tagging a release (`v*`) triggers cross-platform binary builds for Linux, macOS, and Windows — automatically attached to the GitHub Release.
 
 ---
 
 ## Performance Benchmarks
 
-The tool is designed for high-throughput domain validation. Performance varies based on configuration and network conditions.
-
-### Typical Performance Metrics
-
 | Configuration | Throughput | Notes |
 |---|---|---|
-| Default (10 workers, 20 RPS) | 200-500 domains/min | Conservative, safe defaults |
-| Optimized (20 workers, 50 RPS) | 1,000-2,000 domains/min | Balanced performance |
-| Aggressive (50 workers, 100 RPS) | 3,000-5,000 domains/min | Requires careful monitoring |
+| Default (10 workers, 20 RPS) | ~1,200 domains/min | Safe defaults, good for most use cases |
+| Optimized (20 workers, 50 RPS) | ~3,000 domains/min | Balanced performance |
+| Aggressive (50 workers, 100 RPS) | ~6,000 domains/min | Monitor for DNS rate limiting |
 
-**Note:** Actual performance depends on DNS resolver response times, network latency, and domain configuration complexity.
+Actual throughput depends on DNS resolver latency, network conditions, and domain complexity.
 
 ---
 
@@ -450,91 +396,76 @@ The tool is designed for high-throughput domain validation. Performance varies b
 
 ### High Timeout Rate
 
-**Problem:** Many domains timing out or failing to resolve.
+- Increase `--timeout` (try `60s` or `120s`)
+- Use a faster public resolver: `--dns 8.8.8.8:53`
+- Reduce `--workers` and `--rps` to lower concurrent DNS load
+- Add `--retries 3` for flaky network conditions
 
-**Solutions:**
-- Increase `--timeout` duration
-- Reduce `--workers` to decrease concurrent load
-- Lower `--rps` to reduce DNS query rate
-- Verify network connectivity and DNS resolver availability
+### DNS Rate Limiting / SERVFAIL
 
-### IP Blocks from DNS Servers
+- Lower `--rps` to `10`–`15`
+- Reduce `--workers` to `5`
+- Switch to a different resolver: `--dns 1.1.1.1:53`
 
-**Problem:** DNS queries are being blocked (SERVFAIL responses).
+### Domain Column Not Detected
 
-**Solutions:**
-- Significantly reduce `--rps` (try 10-15)
-- Reduce `--workers` (5-10)
-- Implement delays between batches
-- Use a different DNS resolver or VPN
+- Use `--col <index>` to specify the zero-based column index
+- Use `--skip-header` if the CSV has a header row
 
-### Memory Usage Growing
+### Empty Output File
 
-**Problem:** Memory consumption increases over time.
-
-**Solutions:**
-- This is rare with the streaming CSV processor
-- Reduce `--workers` to lower concurrent operations
-- Process smaller batches of domains
-- Check for resource leaks (report as issue)
-
-### Empty or Incorrect Output
-
-**Problem:** Output CSV is missing data or columns.
-
-**Solutions:**
-- Verify input CSV has `domain` column
-- Check that input file is valid UTF-8
-- Ensure output file path is writable
-- Check console output for error messages
+- Verify the input path is correct and the file is readable
+- Check that the output path is writable
+- Look for error messages in the console log
 
 ---
 
 ## FAQ
 
 **Q: What DNS records does the tool validate?**
-A: The tool checks for MX, SPF, and DMARC records. It validates record presence and captures full record values for manual inspection.
-
-**Q: Can I use this in production?**
-A: Yes. The tool is designed for production use with proper configuration and monitoring. Start with conservative settings and scale gradually.
+A: MX (mail exchange), SPF (Sender Policy Framework via TXT), and DMARC (`_dmarc.<domain>` TXT). Record values are captured in full.
 
 **Q: Does the tool modify any DNS records?**
-A: No. Email Checker Tool is read-only—it performs DNS queries only and never makes changes to any records.
+A: No. All operations are read-only DNS queries.
 
-**Q: What happens if a domain is invalid?**
-A: Invalid domains produce an error entry in the output CSV. The tool continues processing other domains.
+**Q: Can I use a private/internal DNS resolver?**
+A: Yes. Pass `--dns <host>:<port>` to point at any UDP DNS resolver, including internal ones.
+
+**Q: What does the cache do?**
+A: If the same domain appears more than once in the input, the second lookup is served from memory instead of hitting DNS again. Set `--cache-ttl 0` to disable.
 
 **Q: Can I run multiple instances in parallel?**
-A: Yes, but be mindful of combined rate limits. A safer approach is increasing `--workers` in a single instance.
+A: Yes, but be mindful of combined RPS. It's usually safer to increase `--workers` in a single instance.
 
 **Q: Is there a web API or GUI?**
-A: Currently, the tool is CLI-only. A REST API or web interface could be explored in future versions.
+A: The tool is CLI-only. Pipe JSON output to any downstream system as needed.
+
+---
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+
+Quick steps:
+
+1. Fork the repo and create a feature branch
+2. Make your changes with tests
+3. Ensure `go test ./...` and `golangci-lint run` pass
+4. Open a pull request — CI will run automatically
+
+Report bugs or request features via [GitHub Issues](https://github.com/deannos/email-checker-tool/issues).
 
 ---
 
 ## License
 
-This project is distributed under the **MIT License**. See the [LICENSE](LICENSE) file for complete terms and conditions.
-
----
-
-## Support and Community
-
-- **Issues:** [Report bugs or request features](https://github.com/deannos/email-checker-tool/issues)
-- **Discussions:** [Start a discussion](https://github.com/deannos/email-checker-tool/discussions)
-- **Documentation:** See this README and inline code comments
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.
-
----
-
-## Acknowledgments
-
-Built with Go's robust standard library and inspired by best practices in the open-source community.
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ---
 
